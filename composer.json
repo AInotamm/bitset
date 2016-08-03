@@ -1,0 +1,13 @@
+{
+    "name": "ainotamm/bitset",
+    "description": "对位图的部分操作的封装",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "AInotamm",
+            "email": "rondonay@gmail.com"
+        }
+    ],
+    "require": {}
+}
