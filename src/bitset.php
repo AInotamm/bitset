@@ -69,16 +69,36 @@ class bitset implements ArrayAccess, Countable, Serializable
 		return $this->set[$offset] === $this->true;
 	}
 
+	/**
+	 * 判断位图的所有位置是否都被设置为true
+	 * @return bool
+	 */
 	public function all() {
 
 	}
 
+	/**
+	 * 判断位图的是否有被设置过true
+	 * @return bool
+	 */
 	public function any() {
 
 	}
 
+	/**
+	 * 判断位图的所有位置是否都被设置为false
+	 * @return bool
+	 */
 	public function none() {
-		
+
+	}
+
+	/**
+	 * 将位图转换为合理的整型数值
+	 * @return integer 位图的实际值
+	 */
+	public function toInt() {
+
 	}
 
 	/**
@@ -162,6 +182,9 @@ class bitset implements ArrayAccess, Countable, Serializable
 	public function offsetSet($offset, $value) {
 		if (!is_int($offset))
 			throw \ErrorException('The offset type must be integer.');
+
+		if ($offset > \PHP_INT_SIZE - 1)
+			throw \ErrorException('Out of range.');
 
 		$this->set[$offset] = $value;
 
