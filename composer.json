@@ -9,5 +9,10 @@
             "email": "rondonay@gmail.com"
         }
     ],
+    "autoload": {
+        "psr-4": {
+            "redrock\\bitset\\": "src/"
+        }
+    },
     "require": {}
 }
