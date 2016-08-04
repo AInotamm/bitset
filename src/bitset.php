@@ -127,6 +127,29 @@ class bitset implements ArrayAccess, Countable, Serializable
 	}
 
 	/**
+	 * 翻转位图的某一位的真值
+	 * @param  integer $pos
+	 * @return void
+	 */
+	public function filpByte($pos) {
+		$value = &$this[$pos];
+
+		if ($this->true_ === $value)
+			$value = $this->false_;
+		else
+			$value = $this->true_;
+	}
+
+	/**
+	 * 翻转位图的所有位的真值
+	 * @return void
+	 */
+	public function filp() {
+		for ($i = 0; $i < $this->size; $i++)
+			filpByte($i);
+	}
+
+	/**
 	 * 将位图转换为合理的整型数值
 	 * @return integer 位图的实际值
 	 */
@@ -274,7 +297,9 @@ if (!function_exists('bitset_and')) {
 
 if (!function_exists('bitset_not')) {
 	function bitset_not(bitset &$x) {
+		for ($i = 0; $i < $x->size(); $i++) {
 
+		}
 	}
 }
 
