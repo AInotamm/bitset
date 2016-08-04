@@ -5,9 +5,14 @@ namespace redrock\bitset;
 use ArrayAccess;
 use Countable;
 use Serializable;
+use ErrorException;
+use Closure;
 
 class bitset implements ArrayAccess, Countable, Serializable
 {
+	/** 位图的最大长度 */
+	const MAX_SIZE = 8 * \PHP_INT_SIZE - 3;
+
 	/**
 	 * 位图长度，应规定不大于PHP_INT_SIZE
 	 * @var integer
@@ -22,51 +27,79 @@ class bitset implements ArrayAccess, Countable, Serializable
 	 * 存放位图的数组
 	 * @var array
 	 */
-	private $set = [];
+	private $set_ = [];
 	/**
 	 * 该值会被转换为规则的true
 	 */
-	private $true = 1;
+	private $true_;
 	/**
 	 * 该值会被转换为规则的false
 	 */
-	private $false = 0;
+	private $false_;
 
 	/**
-	 * 构造size长度的位图，可以传入固定长度的
-	 * @param [type] $size    [description]
-	 * @param array  $boolean [description]
+	 * 构造size长度的位图，可以传入固定长度的位图分配器
+	 * @param integer $size    位图长度
+	 * @param array   $boolean 用以分配位图的数组
+	 * @param mixed   $true
+	 * @param mixed   $false
 	 */
 	public function __construct($size, array $alloc = [], $true = 1, $false = 0) {
-		if ($size < 0 || $size > \PHP_INT_SIZE)
+		if ($size <= 0 || $size > self::MAX_SIZE)
 			$this->size = 0;
+		else {
+			$this->setBoolValue($true, $false);
 
-		if ($size > 0) {
-			if (!is_null($alloc)) {
-				if ($this->size != count($alloc))
-					throw \ErrorException('Invalid Allocate Size!');
+			if (!empty($alloc)) 
+				if ($size < count($alloc))
+					throw new ErrorException('Invalid Allocate Size!');
 
-				$this->setBoolValue($true, $false);
-				$this->set = $alloc;
-			} else {
-				// 初始化所有位点的值为0
-				for ($i = 0; $i < $size; $i++)
-					$this->set[$i] = $this->false;
+			for ($i = 0; $i < $size; $i++) {
+				$this->set_[$i] = isset($alloc[$i]) ? $alloc[$i] : $this->false_;
 			}
+
+			$this->size = $size;
 		}
 	}
 
 	/**
 	 * 检查对应下标的值是否设置为true
+	 * 可以加入全局判断条件，指定的下标将作为偏移值
 	 * @param  integer $offset
+	 * @param  string  $predicate 
+	 * 允许的值有'any', 'all'以及'none'
 	 * @return bool
 	 * @throw ErrorException
 	 */
-	public function test($offset) {
+	public function test($offset, $predicate = '') {
 		if (!$this->offsetExists($offset))
-			throw \ErrorException('Out of range.');
+			throw new ErrorException('Out of range.');
 
-		return $this->set[$offset] === $this->true;
+		$mark = $this->true_;
+
+		if ($predicate !== '') {
+			if ($predicate === 'none')
+				$mark = $this->false_;
+
+			// 检测真值
+			$test_true = Closure::bind(function ($value) use ($mark) {
+				return $value === $this->true_;
+			}, $this);
+
+			for ($i = $offset; $i >= 0; --$i) {
+				$value = $this->set_[$i];
+				$bool = $test_true($value);
+
+				if (!$bool) {
+					if ($predicate === 'all') return false;
+				} else {
+					if ($predicate === 'any') return true;
+					if ($predicate === 'none') return false;
+				}
+			}
+		}
+
+		return $this->set_[$offset] === $mark;
 	}
 
 	/**
@@ -74,7 +107,7 @@ class bitset implements ArrayAccess, Countable, Serializable
 	 * @return bool
 	 */
 	public function all() {
-
+		return $this->test($this->size - 1, 'all');
 	}
 
 	/**
@@ -82,7 +115,7 @@ class bitset implements ArrayAccess, Countable, Serializable
 	 * @return bool
 	 */
 	public function any() {
-
+		return $this->test($this->size - 1, 'any');
 	}
 
 	/**
@@ -90,7 +123,7 @@ class bitset implements ArrayAccess, Countable, Serializable
 	 * @return bool
 	 */
 	public function none() {
-
+		return $this->test($this->size - 1, 'none');
 	}
 
 	/**
@@ -98,7 +131,26 @@ class bitset implements ArrayAccess, Countable, Serializable
 	 * @return integer 位图的实际值
 	 */
 	public function toInt() {
+		$value = 0; $exponent = 1;
 
+		for ($i = $this->size - 1; $i >= 0; $i--, $exponent <<= 1) 
+			if ($this->bool($this->set_[$i]))
+				$value += $exponent;
+
+		return $value;
+	}
+
+	/**
+	 * 将位图转换为规范的01位图
+	 * @return string
+	 */
+	public function __toString() {
+		$str = '';
+
+		for ($i = 0; $i < $this->size; $i++)
+			$str .= $this->bool($this->set_[$i]);
+
+		return $str;
 	}
 
 	/**
@@ -108,21 +160,27 @@ class bitset implements ArrayAccess, Countable, Serializable
 	 * @throw ErrorException
 	 */
 	private function bool($value) {
-		if ($true === $value)
+		if ($this->true_ === $value)
 			return 1;
-		else if ($false === $value)
+		else if ($this->false_ === $value)
 			return 0;
-		else
-			throw \ErrorException("Cannot change this value: " . $value);
+
+		throw new ErrorException('Cannot change this value: ' . $value . ', Now the TRUE as ' . $this->true_ . ', the FALSE as ' . $this->false_);
 	}
 
 	private function setBoolValue($true, $false) {
-		// 满足该条件时不更改
-		if (1 == intval($true) || 0 === intval($false))
-			return ;
+		if (!is_numeric($false)) {
+			if (is_null($false) || empty($false)) {
+				throw new ErrorException('Cannot set this invalid value: ' . $false);
+			}
+		} else if (!is_int($false)) {
+			// 满足该条件时不更改
+			if (1 === intval($true) || 0 === intval($false))
+				return ;
+		}
 
-		$this->true = $true;
-		$this->false = $false;
+		$this->true_ = $true;
+		$this->false_ = $false;
 	}
 
 	/**
@@ -156,7 +214,7 @@ class bitset implements ArrayAccess, Countable, Serializable
 	 */
 	public function offsetExists($offset) {
 		return is_int($offset) && (
-			$offset < 0 || $offset > $this->size || isset($this->set[$offset])
+			$offset < 0 || $offset > $this->size || isset($this->set_[$offset])
 		);
 	}
 
@@ -167,9 +225,9 @@ class bitset implements ArrayAccess, Countable, Serializable
 	 */
 	public function offsetGet($offset) {
 		if (!is_int($offset))
-			throw \ErrorException('The offset type must be integer.');
+			throw new ErrorException('The offset type must be integer.');
 
-		return $this->bool($this->set[$offset]);
+		return $this->bool($this->set_[$offset]);
 	}
 
 	/**
@@ -181,12 +239,12 @@ class bitset implements ArrayAccess, Countable, Serializable
 	 */
 	public function offsetSet($offset, $value) {
 		if (!is_int($offset))
-			throw \ErrorException('The offset type must be integer.');
+			throw new ErrorException('The offset type must be integer.');
 
-		if ($offset > \PHP_INT_SIZE - 1)
-			throw \ErrorException('Out of range.');
+		if ($offset > $this->size)
+			throw new ErrorException('Out of range.');
 
-		$this->set[$offset] = $value;
+		$this->set_[$offset] = $this->bool($value);
 
 		if (!$this->offsetExists($offset)) 
 			$this->size++;
@@ -194,13 +252,13 @@ class bitset implements ArrayAccess, Countable, Serializable
 
 	public function offsetUnset($offset) {
 		if ($this->offsetExists($offset)) {
-			unset($this->set[$offset]);
+			unset($this->set_[$offset]);
 			$this->size--;
 		}
 	}
 
 	public function serialize() {
-
+		return $this->__toString();
 	}
 
 	public function unserialize($serialized) {
@@ -209,25 +267,25 @@ class bitset implements ArrayAccess, Countable, Serializable
 }
 
 if (!function_exists('bitset_and')) {
-	function bitset_and(bitset $x, bitset $y) {
+	function bitset_and(bitset &$x, bitset $y) {
 
 	}
 }
 
 if (!function_exists('bitset_not')) {
-	function bitset_not(bitset $x, bitset $y) {
-		
+	function bitset_not(bitset &$x) {
+
 	}
 }
 
 if (!function_exists('bitset_or')) {
-	function bitset_or(bitset $x, bitset $y) {
+	function bitset_or(bitset &$x, bitset $y) {
 		
 	}
 }
 
 if (!function_exists('bitset_xor')) {
-	function bitset_xor(bitset $x, bitset $y) {
+	function bitset_xor(bitset &$x, bitset $y) {
 		
 	}
 }
